@@ -15,12 +15,17 @@
 #define URL_REGISTER "/api/v1/tema/auth/register"
 #define URL_LOGIN "/api/v1/tema/auth/login"
 #define URL_ENTER_LIBRARY "/api/v1/tema/library/access"
+#define URL_GET_BOOKS "/api/v1/tema/library/books"
+#define URL_LOGOUT "/api/v1/tema/auth/logout"
 
+//returns a serialized JSON string containing 
+//the username and password read from stdin
 char *get_user() {
     //fetch username
     char username[BUFFLEN] = {0};
     printf("username=");
     fgets(username, BUFFLEN, stdin);
+    //check for spaces in username
     if (strstr(username, " ") != NULL) {
         printf("Username cannot contain spaces!\n\n");
         return NULL;
@@ -31,6 +36,7 @@ char *get_user() {
     char password[BUFFLEN] = {0};
     printf("password=");
     fgets(password, BUFFLEN, stdin);
+    //check for spaces in password
     if (strstr(password, " ") != NULL) {
         printf("Password cannot contain spaces!\n\n");
         return NULL;
@@ -52,7 +58,7 @@ int main(int argc, char *argv[]) {
     char host_ipaddr[16] = "34.254.242.81";
 
     int login_status = 0; //0 - not logged in, 1 - logged in
-    int library_status = 0; //0 - NO access to library, 1 - access to library
+    int library_access = 0; //0 - NO access to library, 1 - access to library
     char session_cookie[BUFFLEN] = {0};
     char jwt_token[BUFFLEN] = {0};
 
@@ -71,7 +77,8 @@ int main(int argc, char *argv[]) {
             break;
         }
 
-        else if (strcmp(buff, "register\n") == 0) { //REGISTER command
+        else if (strcmp(buff, "register\n") == 0) //REGISTER command
+        { 
             //get JSON object with username and password
             char *serialized_string = get_user();
             if (serialized_string == NULL) {
@@ -94,7 +101,8 @@ int main(int argc, char *argv[]) {
             else printf("ERROR\n");
         }
 
-        else if (strcmp(buff, "login\n") == 0) { //LOGIN command
+        else if (strcmp(buff, "login\n") == 0) //LOGIN command
+        {
             //check if user is already logged in
             if (login_status == 1) {
                 printf("You are already logged in!\n\n");
@@ -140,7 +148,8 @@ int main(int argc, char *argv[]) {
             else printf("ERROR\n");
         }
 
-        else if (strcmp(buff, "enter_library\n") == 0) { //Get acces to library command
+        else if (strcmp(buff, "enter_library\n") == 0) //ENTER_LIBRARY command
+        {
             //check if user is logged in
             if (login_status == 0) {
                 printf("You are not logged in!\n\n");
@@ -149,7 +158,7 @@ int main(int argc, char *argv[]) {
             }
 
             //check if user already has access to library
-            if (library_status == 1) {
+            if (library_access == 1) {
                 printf("You already have access to library!\n\n");
                 close_connection(sockfd);
                 continue;
@@ -173,12 +182,87 @@ int main(int argc, char *argv[]) {
                     i++;
                 jwt_token[i] = '\0';
                 
+                //set library access to 1 and print success message
                 if(jwt_token != NULL) {
-                    library_status = 1;
+                    library_access = 1;
                     printf("Access granted!\n");
                 }
             }
             else printf("ERROR\n");
+        }
+
+        else if (strcmp(buff, "get_books\n") == 0) //GET_BOOKS command
+        {
+            //check if user has access to library
+            if (library_access == 0) {
+                printf("You don't have access to library!\n\n");
+                close_connection(sockfd);
+                continue;
+            }
+
+            //compute GET request, send it to server and receive response
+            char *message = compute_get_request(host_ipaddr, URL_GET_BOOKS, NULL, session_cookie, jwt_token);
+            send_to_server(sockfd, message);
+            char *response = receive_from_server(sockfd);
+
+            //print books
+            if (strstr(response, "HTTP/1.1 200 OK") != NULL) {
+                char *books = strstr(response, "\n[{\"id\":");
+
+                if (books != NULL) {
+                    // JSON_Value *root_value;
+                    // JSON_Array *books_array;
+                    // JSON_Object *book_object;
+                    // root_value = json_parse_string(books);
+                    // books_array = json_value_get_array(root_value);
+
+                    // for (int i = 0; i < json_array_get_count(books_array); i++) {
+                    //     book_object = json_array_get_object(books_array, i);
+                    //     printf("id: %d\n", (int)json_object_get_number(book_object, "id"));
+                    //     printf("title: %s\n", json_object_get_string(book_object, "title"));
+                    //     printf("\n");
+                    //}
+                    printf("%s\n", books);
+                }
+                else printf("No books in library!\n");
+            }
+            else printf("ERROR\n");
+        }
+
+        else if (strcmp(buff, "logout\n") == 0) //LOGOUT command
+        {
+            //check if user is logged in
+            if (login_status == 0) {
+                printf("You are not logged in!\n\n");
+                close_connection(sockfd);
+                continue;
+            }
+
+            //compute GET request, send it to server and receive response
+            char *message = compute_get_request(host_ipaddr, URL_LOGOUT, NULL, session_cookie, NULL);
+            send_to_server(sockfd, message);
+            char *response = receive_from_server(sockfd);
+
+            //check if logout was succesful
+            if (strstr(response, "HTTP/1.1 200 OK") != NULL) {
+                //reset login status and library access
+                login_status = 0;
+                library_access = 0;
+
+                //reset session cookie and JWT token
+                session_cookie[0] = '\0';
+                jwt_token[0] = '\0';
+
+                //print success message
+                printf("Logout succesful!\n");
+            }
+            else printf("ERROR\n");
+        }
+
+        else if (strcmp(buff, "exit\n") == 0) //EXIT command
+        {
+            close_connection(sockfd);
+            break;
         }
 
         else {
