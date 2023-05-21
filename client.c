@@ -179,7 +179,7 @@ int main(int argc, char *argv[]) {
         char buff[BUFFLEN] = {0};
         fgets(buff, BUFFLEN, stdin);
 
-        //open connection to server after each user command
+        //open connection to server for each user command
         int sockfd = open_connection(host_ipaddr, host_port, AF_INET, SOCK_STREAM, 0);
 
         //close connection and exit
@@ -488,12 +488,6 @@ int main(int argc, char *argv[]) {
                 printf("Logout succesful!\n");
             }
             else printf("ERROR\n");
-        }
-
-        else if (strcmp(buff, "exit\n") == 0) //EXIT command
-        {
-            close_connection(sockfd);
-            break;
         }
 
         else {

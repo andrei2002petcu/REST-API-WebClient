@@ -1,0 +1,68 @@
+###############################################################################
+########################### README - Tema_4 PCOM ##############################
+###############################################################################
+
+Am realizat implementarea plecand de la scheletul din laboratorul 9 la care am
+adaugat biblioteca "parson" de parsare JSON, asa cum a fost recomandat in
+cerinta temei. Functiile de compute din fisierul request.c, au fost modificate 
+pentru simplificare: am inlocuit array-ul de cookies cu un singur cookie pentru
+sesiune (logare), si un token JWT. In plus, am adaugat functia pentru DELETE
+request, dupa scheletul celor deja prezente.
+
+Implementarea clientului se regaseste in client.c. Dupa setarea ip-ului si a
+portului, se porneste un loop infinit care citeste de la stdin o comanda si
+deschide o conexiune cu serverul. Daca comanda este "exit", se inchide
+conexiunea si se iese din loop. Pentru restul comenzilor:
+
+- "register"- se apeleaza o functie helper "get_user" care citeste de la stdin
+username-ul si parola si alcatuieste JSON-ul pentru request. JSON-ul este
+trimis la server folosind functia pentru POST request din request.c, iar 
+raspunsul este parsat, urmand sa se afiseaze mesaje sugestive pentru succes sau
+fail.
+
+- "login"- daca clientul nu este logat, se procedeaza similar comenzii register
+Apeleaza "get_user", trimite request-ul POST si parseaza raspunsul. Daca s-a
+reusit logarea, se extrage cookie-ul de sesiune din raspuns si se seteaza pe 1
+flag-ul de logare.
+
+- "enter_library"- daca clientul este logat si nu are deja acces la biblioteca,
+se va trimite un request de tip GET cu cookie-ul de sesiune setat. Din raspuns
+se extrage token-ul JWT si se seteaza pe 1 flag-ul de acces la biblioteca.
+
+- "get_books"- daca clientul are acces la biblioteca, se va trimite un request
+de tip GET cu cookie-ul de sesiune si token-ul JWT setate. Din raspuns extrage
+lista de carti in format JSON, folosind biblioteca "parson" si o afiseaza. In
+cazul in care nu exista nicio carte in biblioteca, se va afisa un mesaj.
+
+- "get_book"- daca clientul are acces la biblioteca, apeleaza functia helper
+"get_book_id" care citeste de la stdin id-ul cartii si alcatuieste URL-ul 
+pentru request. Se trimite request-ul de tip GET cu cookie-ul de sesiune si
+token-ul JWT setate. Din raspuns se extrage cartea in format JSON, folosind
+biblioteca "parson" si se afiseaza. In cazul in care nu exista cartea cu id-ul
+respectiv, se va afisa un mesaj.
+
+- "add_book"- daca clientul are acces la biblioteca, apeleaza functia helper
+"get_book" care citeste de la stdin titlul, autorul, publisher-ul si genul
+cartii si alcatuieste JSON-ul pentru request. Se trimite request-ul POST si
+se afiseaza daca s-a adaugat cartea cu succes.
+
+- "delete_book"- daca clientul are acces la biblioteca, similar comenzii 
+"get_book", se apeleaza functia helper "get_book_id" pentru a face rost de URL
+pentru request, se trimite request-ul DELETE si se afiseaza daca s-a sters cu
+succes cartea. Daca nu exista cartea cu id-ul respectiv, se va afisa un mesaj.
+
+- "logout"- daca clientul este logat, se trimite un request de tip GET cu
+cookie-ul de sesiune setat. Se afiseaza mesajul de succes, se seteaza pe 0
+flag-ul de logare si cel de acces la biblioteca si se reseteaza cookie-ul de
+sesiune si token-ul JWT.
+
+Pentru verificarea formatului input-ului de la utilizator, am folosit functiile
+"check_format" care verifica daca input-ul este gol si eventual daca acesta 
+contine spatii; 
+"is_number" care verifica daca input-ul (string) contine doar cifre. (folosit
+pentru id si numarul de pagini al unei carti). 
+
+###############################################################################
+Facultatea de Automatica si Calculatoare - Anul 2 2022-2023 - Grupa 322CCa
+PETCU Andrei - PCOM - TEMA 4
+###############################################################################
