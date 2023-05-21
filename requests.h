@@ -10,4 +10,7 @@ char *compute_get_request(char *host, char *url, char *query_params,
 char *compute_post_request(char *host, char *url, char* content_type, char *body_data,
 							char* cookie, char *token_cookie);
 
+// computes and returns a DELETE request string (cookies can be NULL if not needed)
+char *compute_delete_request(char *host, char *url, char *cookie, char *token_cookie);
+
 #endif

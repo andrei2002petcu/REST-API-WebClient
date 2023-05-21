@@ -26,13 +26,13 @@
 int check_format(char *buff, int space_allowed) {
     //check if empty string
     if (strlen(buff) == 0 || buff[0] == '\n' || buff[0] == ' ') {
-        printf("Field cannot be empty\n\n");
+        printf("Fields cannot be empty\n\n");
         return -1;
     }
 
     //check for spaces
     if (space_allowed == 0 && strstr(buff, " ") != NULL) {
-        printf("Field cannot contain spaces!\n\n");
+        printf("Fields cannot contain spaces!\n\n");
         return -1;
     }
 
@@ -56,21 +56,21 @@ char *get_user() {
     char username[BUFFLEN] = {0};
     printf("username=");
     fgets(username, BUFFLEN, stdin);
-    //check for spaces in username
-    if (check_format(username, 0) == -1) {
-        return NULL;
-    }
     username[strlen(username) - 1] = '\0';
 
     //fetch password
     char password[BUFFLEN] = {0};
     printf("password=");
     fgets(password, BUFFLEN, stdin);
-    //check for spaces in password
+    password[strlen(password) - 1] = '\0';
+
+    //check if the username and password are valid
+    if (check_format(username, 0) == -1) {
+        return NULL;
+    }
     if (check_format(password, 1) == -1) {
         return NULL;
     }
-    password[strlen(password) - 1] = '\0';
 
     //init the JSON object
     JSON_Value *root_value = json_value_init_object();
@@ -88,36 +88,24 @@ char *get_book() {
     char title[BUFFLEN] = {0};
     printf("title=");
     fgets(title, BUFFLEN, stdin);
-    if (check_format(title, 1) == -1) {
-        return NULL;
-    }
     title[strlen(title) - 1] = '\0';
 
     //fetch author
     char author[BUFFLEN] = {0};
     printf("author=");
     fgets(author, BUFFLEN, stdin);
-    if (check_format(author, 1) == -1) {
-        return NULL;
-    }
     author[strlen(author) - 1] = '\0';
 
     //fetch genre
     char genre[BUFFLEN] = {0};
     printf("genre=");
     fgets(genre, BUFFLEN, stdin);
-    if (check_format(genre, 1) == -1) {
-        return NULL;
-    }
     genre[strlen(genre) - 1] = '\0';
 
     //fetch publisher
     char publisher[BUFFLEN] = {0};
     printf("publisher=");
     fgets(publisher, BUFFLEN, stdin);
-    if (check_format(publisher, 1) == -1) {
-        return NULL;
-    }
     publisher[strlen(publisher) - 1] = '\0';
 
     //fetch page_count
@@ -125,6 +113,20 @@ char *get_book() {
     printf("page_count=");
     fgets(page_count, BUFFLEN, stdin);
     page_count[strlen(page_count) - 1] = '\0';
+
+    //check if the book info is valid
+    if (check_format(title, 1) == -1) {
+        return NULL;
+    }
+    if (check_format(author, 1) == -1) {
+        return NULL;
+    }
+    if (check_format(genre, 1) == -1) {
+        return NULL;
+    }
+    if (check_format(publisher, 1) == -1) {
+        return NULL;
+    }
     if (is_number(page_count) == -1) {
         printf("Page count must be a number!\n\n");
         return NULL;
@@ -336,21 +338,20 @@ int main(int argc, char *argv[]) {
                 char *books = strstr(response, "\n[{\"id\":");
 
                 if (books != NULL) {
-                    // JSON_Value *root_value;
-                    // JSON_Array *books_array;
-                    // JSON_Object *book_object;
-                    // root_value = json_parse_string(books);
-                    // books_array = json_value_get_array(root_value);
+                    JSON_Value *root_value;
+                    JSON_Array *books_array;
+                    JSON_Object *book_object;
+                    root_value = json_parse_string(books);
+                    books_array = json_value_get_array(root_value);
 
-                    // for (int i = 0; i < json_array_get_count(books_array); i++) {
-                    //     book_object = json_array_get_object(books_array, i);
-                    //     printf("id: %d\n", (int)json_object_get_number(book_object, "id"));
-                    //     printf("title: %s\n", json_object_get_string(book_object, "title"));
-                    //     printf("\n");
-                    //}
-                    printf("%s\n", books);
+                    for (int i = 0; i < json_array_get_count(books_array); i++) {
+                        book_object = json_array_get_object(books_array, i);
+                        printf("\nid= %d\n", (int)json_object_get_number(book_object, "id"));
+                        printf("title= %s\n", json_object_get_string(book_object, "title"));
+                    }
                 }
-                else printf("No books in library!\n");
+                else 
+                    printf("No books in library!\n");
             }
             else printf("ERROR\n");
         }
@@ -380,21 +381,19 @@ int main(int argc, char *argv[]) {
                 char *book = strstr(response, "{\"id\":");
 
                 if (book != NULL) {
-                    // JSON_Value *root_value;
-                    // JSON_Object *book_object;
-                    // root_value = json_parse_string(book);
-                    // book_object = json_value_get_object(root_value);
+                    JSON_Value *root_value;
+                    JSON_Object *book_object;
+                    root_value = json_parse_string(book);
+                    book_object = json_value_get_object(root_value);
 
-                    // printf("title: %s\n", json_object_get_string(book_object, "title"));
-                    // printf("author: %s\n", json_object_get_string(book_object, "author"));
-                    // printf("publisher: %s\n", json_object_get_string(book_object, "publisher"));
-                    // printf("genre: %s\n", json_object_get_string(book_object, "genre"));
-                    // printf("page_count: %d\n", (int)json_object_get_number(book_object, "page_count"));
-                    // printf("\n");
-                    
-                    printf("%s\n", book);
+                    printf("title= %s\n", json_object_get_string(book_object, "title"));
+                    printf("author= %s\n", json_object_get_string(book_object, "author"));
+                    printf("publisher= %s\n", json_object_get_string(book_object, "publisher"));
+                    printf("genre= %s\n", json_object_get_string(book_object, "genre"));
+                    printf("page_count= %d\n", (int)json_object_get_number(book_object, "page_count"));
                 }
-                else printf("No book was found with this id!\n");
+                else 
+                    printf("No book was found with this id!\n");
             }
             else if (strstr(response, "HTTP/1.1 404 Not Found") != NULL)
                 printf("No book was found with this id!\n");
@@ -428,6 +427,37 @@ int main(int argc, char *argv[]) {
                 printf("Book added succesfully!\n");
             }
             else printf("ERROR\n");
+        }
+
+        else if (strcmp(buff, "delete_book\n") == 0) //DELETE_BOOK command
+        {
+            //check if user has access to library
+            if (library_access == 0) {
+                printf("You don't have access to library!\n\n");
+                close_connection(sockfd);
+                continue;
+            }
+
+            //get URL for DELETE_BOOK request with book id
+            char *url = get_book_id();
+            if (url == NULL) {
+                close_connection(sockfd);
+                continue;
+            }
+
+            //compute DELETE request, send it to server and receive response
+            char *message = compute_delete_request(host_ipaddr, url, session_cookie, jwt_token);
+            send_to_server(sockfd, message);
+            char *response = receive_from_server(sockfd);
+
+            //print appropriate message
+            if (strstr(response, "HTTP/1.1 200 OK") != NULL) {
+                printf("Book deleted succesfully!\n");
+            }
+            else if (strstr(response, "HTTP/1.1 404 Not Found") != NULL)
+                printf("No book was found with this id!\n");
+            else 
+                printf("ERROR\n");
         }
 
         else if (strcmp(buff, "logout\n") == 0) //LOGOUT command

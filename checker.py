@@ -6,6 +6,7 @@ Dependencies: pexpect
 """
 
 import sys
+import shlex
 import traceback
 from collections import namedtuple
 import argparse
@@ -19,11 +20,11 @@ TEST_PASSWORD = "test123"
 EXPECT_TIMEOUT = 1  # 1 second should be enough...
 TEXT_INDENT = "    "
 
-RE_SUCCESS = r"^.*([Ss]uccess?|OK|[Oo]kay).*$"
-RE_ERROR = r"^.*([Ee]rror|[Ff]ail|[Ee]suat).*$"
+RE_SUCCESS = re.compile(r"^.*((?:^|\W)succ?ess?|(?:^|\W)ok(?:$|\W)|(?:^|\W)okay).*$", re.IGNORECASE)
+RE_ERROR = re.compile(r"^.*((?:^|\W)err?oa?r|(?:^|\W)fail|(?:^|\W)esuat).*$", re.IGNORECASE)
 # JSON parsing using RegExp: don't do this at home!
-RE_BOOK_ID = r"id\s*=\s*([0-9]+)|\"id\"\s*:\s*\"?([0-9]+)"
-RE_EXTRACT_FIELD = r"%s\s*=\s*(.+)\s*|\"%s\"\s*:\s*(?:\"([^\"]+)|([0-9]+))"
+RE_BOOK_ID = r"id[ \t\f\v]*[=:][ \t\f\v]*([0-9]+)|\"id\"\s*:\s*\"?([0-9]+)"
+RE_EXTRACT_FIELD = r"%s[ \t\f\v]*[=:][ \t\f\v]*([^\r\n]+)\s*?|\"%s\"\s*:\s*(?:\"([^\"]+)|([0-9]+))"
 
 
 # classes used
@@ -65,12 +66,19 @@ def normalize_user(xargs):
 
 def expect_send_params(p, xvars):
     keys = list(xvars.keys())
-    xpatterns =  [(r"(" + kw + r")\s*=\s*") for kw in keys]
+    xpatterns =  [(r"(" + kw + r")[ \t\f\v]*=[ \t\f\v]*") for kw in keys]
     xseen = set()
     while xseen != set(keys):
         idx = p.expect(xpatterns)
         p.sendline(str(xvars.get(keys[idx])))
         xseen.add(keys[idx])
+
+def expect_flush_output(p):
+    i = p.expect([pexpect.TIMEOUT, pexpect.EOF])
+    buf = p.before
+    if i == 0 and p.before:
+        p.expect(r'.+')
+    return buf
 
 def expect_print_output(p):
     res = p.expect([RE_SUCCESS, RE_ERROR, pexpect.TIMEOUT])
@@ -82,6 +90,9 @@ def expect_print_output(p):
         color_args = {"fg": "red"}
     else:
         text = p.before or "<no output>"
+        if p.before:
+            p.expect(r'.+')
+            
     color_print(wrap_test_output(text.strip()), **color_args)
 
 def extract_book_ids(output):
@@ -110,9 +121,9 @@ def do_enter(p, xargs):
 
 def do_get_books(p, xargs):
     p.sendline("get_books")
-    p.expect(pexpect.TIMEOUT)
-    xargs["book_ids"] = extract_book_ids(p.before)
-    xargs["book_titles"] = extract_book_fields(p.before, "title")
+    buf = expect_flush_output(p)
+    xargs["book_ids"] = extract_book_ids(buf)
+    xargs["book_titles"] = extract_book_fields(buf, "title")
     print(wrap_test_output("Retrieved book IDs + titles: \n" +
                                  str(xargs["book_ids"]) + "\n" + str(xargs["book_titles"])))
     expect_count = xargs.get("expect_count", False)
@@ -134,7 +145,6 @@ def do_add_book(p, xargs):
     expect_print_output(p)
 
 def do_get_book_id(p, xargs):
-    p.sendline("get_book")
     book_ids = xargs.get("book_ids")
     idx = xargs.get("book_idx")
     if not book_ids:
@@ -142,23 +152,23 @@ def do_get_book_id(p, xargs):
     if idx >= len(book_ids):
         raise CheckerException("No book index: %s" % str(idx))
     book_id = book_ids[idx]
+    p.sendline("get_book")
     expect_send_params(p, {"id": book_id})
-    p.expect(pexpect.TIMEOUT)
+    buf = expect_flush_output(p)
     expect_book = xargs.get("expect_book", False)
     if type(expect_book) is dict:
         for field in expect_book.keys():
-            values = extract_book_fields(p.before, field)
+            values = extract_book_fields(buf, field)
             if not values:
                 raise CheckerException("Cannot find book field '%s'" % field)
             if len(values) != 1:
-                raise CheckerException("Multiple '%s' fields found in output!" % field)
+                raise CheckerException("Multiple '%s' fields found in output: %s!" % (field, values))
             if str(values[0]) != str(expect_book[field]):
                 raise CheckerException("Book field '%s' mismatch: %s != %s" % 
                                        (field, values[0], expect_book[field]))
         color_print(wrap_test_output("OKAY: fields match!"), fg="green", style="bold")
 
 def do_delete_book(p, xargs):
-    p.sendline("delete_book")
     book_ids = xargs.get("book_ids")
     idx = xargs.get("book_idx")
     if not book_ids:
@@ -166,14 +176,26 @@ def do_delete_book(p, xargs):
     if idx >= len(book_ids):
         raise CheckerException("No book index: %s" % str(idx))
     book_id = book_ids[idx]
+    p.sendline("delete_book")
     expect_send_params(p, {"id": book_id})
     expect_print_output(p)
+
+def do_delete_all_books(p, xargs):
+    book_ids = xargs.get("book_ids")
+    if not book_ids and not xargs.get("delete_books_ignore", False):
+        raise CheckerException("No books found!")
+    for book_id in book_ids:
+        p.sendline("delete_book")
+        expect_send_params(p, {"id": book_id})
+        expect_print_output(p)
 
 def do_logout(p, xargs):
     p.sendline("logout")
     expect_print_output(p)
 
 def do_exit(p, xargs):
+    if xargs.get("dont_exit", False):
+        return
     p.sendline("exit")
     p.expect(pexpect.EOF)
 
@@ -186,58 +208,123 @@ ACTIONS = {
     "get_book_id": do_get_book_id,
     "add_book": do_add_book,
     "delete_book": do_delete_book,
+    "delete_all_books": do_delete_all_books,
     "logout": do_logout,
     "exit": do_exit,
 }
 
+SAMPLE_BOOKS = [
+    {
+        "title": "Computer Networks", "author": "A. Tanenbaum et. al.",
+        "genre": "Manual", "publisher": "Prentice Hall", "page_count": 950,
+    },
+    {
+        "title": "Viata Lui Nutu Camataru: Dresor de Lei si de Fraieri",
+        "author": "Codin Maticiuc", "genre": "Lifestyle", "publisher": "Scoala Vietii",
+        "page_count": 200,
+    },
+    {
+        "title": "Oracle SQL, SQL*Plus", "author": "Alexandru Boicea",
+        "publisher": "Printech", "genre": "BD", "page_count": 112
+    },
+]
+_book_test_fields = lambda idx: {key: SAMPLE_BOOKS[idx][key] for key in ("title", "author", "page_count")}
+
 SCRIPTS = {
+    "ALL": ["full", "delete_all", "add3", "read3", "delete_all",
+            "invalid_user", "invalid_book_fields", "invalid_book_pages", "delete_all"],
     "full": [
         ("register", {}),  # use CLI-provided user
         ("login", {}), ("enter_library", {}),
         ("get_books", {"expect_count": False}),
-        ("add_book", {"book": {
-                "title": "Computer Networks", "author": "A. Tanenbaum et. al.",
-                "genre": "Manual", "publisher": "Prentice Hall", "page_count": 950,
-            }}),
-        ("add_book", {"book": {
-                "title": "Viata Lui Nutu Camataru: Dresor de Lei si de Fraieri",
-                "author": "Codin Maticiuc", "genre": "Lifestyle", "publisher": "Scoala Vietii",
-                "page_count": 200,
-            }}),
+        ("add_book", {"book": SAMPLE_BOOKS[0]}),
+        ("add_book", {"book": SAMPLE_BOOKS[1]}),
         ("get_books", {"expect_count": 2}),
         ("get_book_id", {"book_idx": 0, "expect_book": {"title": "Computer Networks", "page_count": 950}}),
         ("delete_book", {"book_idx": 1}),
         ("logout", {}), ("exit", {}), 
     ],
-    "readonly": [
-        ("register", {}),  # use CLI-provided user
+    "add3": [
+        ("register", {}),
         ("login", {}), ("enter_library", {}),
-        ("get_books", {"expect_count": 2}),
-        ("get_book_id", {"book_idx": 0, "expect_book": {"title": "Computer Networks", "page_count": 950}}),
+        ("get_books", {"expect_count": False}),
+        ("add_book", {"book": SAMPLE_BOOKS[0]}),
+        ("add_book", {"book": SAMPLE_BOOKS[1]}),
+        ("add_book", {"book": SAMPLE_BOOKS[2]}),
+        ("get_books", {"expect_count": 3}),
+        ("get_book_id", {"book_idx": 2, "expect_book": _book_test_fields(2)}),
+        ("get_book_id", {"book_idx": 0, "expect_book": _book_test_fields(0)}),
+        ("get_book_id", {"book_idx": 1, "expect_book": _book_test_fields(1)}),
         ("logout", {}), ("exit", {}), 
-    ]
+    ],
+    "read3": [
+        ("login", {}), ("enter_library", {}),
+        ("get_books", {"expect_count": 3}),
+        ("get_book_id", {"book_idx": 1, "expect_book": SAMPLE_BOOKS[1]}),
+        ("logout", {}), ("exit", {}), 
+    ],
+    "delete_all": [
+        ("login", {}), ("enter_library", {}),
+        ("get_books", {}), ("delete_all_books", {"delete_books_ignore": True}),
+        ("get_books", {"expect_count": 0}),
+        ("logout", {}), ("exit", {}), 
+    ],
+
+    # for the following ones, errors should be reported by the user program
+    "invalid_user": [
+        ("register", {"user": "hahah don't create this:test123"}),
+        ("login", {}), ("enter_library", {}),
+        ("logout", {}), ("exit", {}), 
+    ],
+    "invalid_book_fields": [
+        ("register", {}),
+        ("login", {}), ("enter_library", {}),
+        ("add_book", {"book": {"title": "Something Invalid"}}),
+        ("logout", {}), ("exit", {}), 
+    ],
+    "invalid_book_pages": [
+        ("register", {}),
+        ("login", {}), ("enter_library", {}),
+        ("add_book", {"book": dict(SAMPLE_BOOKS[0], page_count="nope")}),
+        ("logout", {}), ("exit", {}), 
+    ],
 }
 
-
 def run_tasks(p, args):
-    script_name = args.script or "full"
+    script_name = args.get("script")
+    if not script_name:
+        script_name = "full"
     if script_name not in SCRIPTS:
         raise CheckerException("Invalid script: %s" % (script_name))
     script = SCRIPTS[script_name]
-    xargs = dict(vars(args))
-    for action, params in script:
-        params = dict(params)  # copy the original dict
-        ignore = params.pop("ignore", args.ignore)
-        if params:
-            xargs.update(params)
+    xargs = dict(args)
+    for task in script:
+        ignore = xargs.get("ignore", False)
+        action = None
+        action_name = ""
+        print_style = {"fg": "cyan", "style": "bold"}
+        if isinstance(task, tuple):
+            action_name = task[0]
+            action = ACTIONS[action_name]
+            if task[1]:
+                xargs.update(task[1])
+            ignore = xargs.get("ignore", False)
+        elif isinstance(task, str):
+            action_name = "<RUN SUBTASK: %s>" % str(task)
+            print_style = {"fg": "black", "bg": "purple", "style": "bold"}
+            action = run_tasks
+            ignore = True
+            xargs = dict(args, script=task, dont_exit=True)
+        if not action:
+            continue
         try:
-            color_print("%s: " % (action,), fg="cyan", style="bold")
-            ACTIONS[action](p, xargs)
+            color_print("%s: " % action_name, **print_style)
+            action(p, xargs)
         except CheckerException as ex:
-            ex = CheckerException("%s: %s" % (action, str(ex)))
+            ex = CheckerException("%s: %s" % (action.__name__, str(ex)))
             color_print(wrap_test_output("ERROR:"), fg="black", bg="red", stderr=True, newline=False)
             color_print(wrap_test_output(str(ex)), fg="red", stderr=True)
-            if args.debug:
+            if args.get("debug"):
                 color_print(wrap_test_output(traceback.format_exc()), fg="red", stderr=True)
             if not ignore:
                 break
@@ -254,13 +341,13 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--ignore', help="Ignore errors (do not break the tests)", action="store_true")
 
     args = parser.parse_args()
-    p = pexpect.spawn(args.program, encoding='utf-8', echo=False, timeout=EXPECT_TIMEOUT)
+    p = pexpect.spawn(shlex.quote(args.program), encoding='utf-8', echo=False, timeout=EXPECT_TIMEOUT)
     if args.debug:
         p.logfile_send = ExpectInputWrapper(direction=True)
         p.logfile_read = ExpectInputWrapper(direction=False)
 
     try:
-        run_tasks(p, args)
+        run_tasks(p, vars(args))
     except Exception as ex:
         color_print("FATAL ERROR:", fg="black", bg="red", stderr=True, newline=False)
         color_print(" " + str(ex), fg="red", stderr=True)
