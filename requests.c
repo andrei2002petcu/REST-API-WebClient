@@ -48,7 +48,7 @@ char *compute_get_request(char *host, char *url, char *query_params,
 }
 
 char *compute_post_request(char *host, char *url, char* content_type, char *body_data,
-                             char **cookies, int cookies_count)
+                             char *cookie, char *token_cookie)
 {
     char *message = calloc(BUFLEN, sizeof(char));
     char *line = calloc(LINELEN, sizeof(char));
@@ -75,8 +75,16 @@ char *compute_post_request(char *host, char *url, char* content_type, char *body
     compute_message(message, line);
     
     // Step 4 (optional): add cookies
-    if (cookies != NULL) {
-       
+    if (cookie != NULL) {
+        memset(line, 0, LINELEN);
+        sprintf(line, "Cookie: %s", cookie);
+        compute_message(message, line);
+    }
+
+    if (token_cookie != NULL) {
+        memset(line, 0, LINELEN);
+        sprintf(line, "Authorization: Bearer %s", token_cookie);
+        compute_message(message, line);
     }
 
     // Step 5: add new line at end of header

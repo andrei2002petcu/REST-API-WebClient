@@ -6,6 +6,7 @@
 #include <netinet/in.h> /* struct sockaddr_in, struct sockaddr */
 #include <netdb.h>      /* struct hostent, gethostbyname */
 #include <arpa/inet.h>
+#include <ctype.h>
 #include "helpers.h"
 #include "requests.h"
 #include "parson.h"
@@ -16,7 +17,37 @@
 #define URL_LOGIN "/api/v1/tema/auth/login"
 #define URL_ENTER_LIBRARY "/api/v1/tema/library/access"
 #define URL_GET_BOOKS "/api/v1/tema/library/books"
+#define URL_GET_BOOK "/api/v1/tema/library/books/"
+#define URL_ADD_BOOK "/api/v1/tema/library/books"
 #define URL_LOGOUT "/api/v1/tema/auth/logout"
+
+//returns -1 if the string is empty
+//if space_allowed is 0, also returns -1 if the string contains spaces
+int check_format(char *buff, int space_allowed) {
+    //check if empty string
+    if (strlen(buff) == 0 || buff[0] == '\n' || buff[0] == ' ') {
+        printf("Field cannot be empty\n\n");
+        return -1;
+    }
+
+    //check for spaces
+    if (space_allowed == 0 && strstr(buff, " ") != NULL) {
+        printf("Field cannot contain spaces!\n\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+//returns -1 if the string contains non-digit characters
+int is_number(char *buff) {
+    for (int i = 0; i < strlen(buff); i++) {
+        if (isdigit(buff[i]) == 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
 
 //returns a serialized JSON string containing 
 //the username and password read from stdin
@@ -26,8 +57,7 @@ char *get_user() {
     printf("username=");
     fgets(username, BUFFLEN, stdin);
     //check for spaces in username
-    if (strstr(username, " ") != NULL) {
-        printf("Username cannot contain spaces!\n\n");
+    if (check_format(username, 0) == -1) {
         return NULL;
     }
     username[strlen(username) - 1] = '\0';
@@ -37,8 +67,7 @@ char *get_user() {
     printf("password=");
     fgets(password, BUFFLEN, stdin);
     //check for spaces in password
-    if (strstr(password, " ") != NULL) {
-        printf("Password cannot contain spaces!\n\n");
+    if (check_format(password, 1) == -1) {
         return NULL;
     }
     password[strlen(password) - 1] = '\0';
@@ -50,6 +79,86 @@ char *get_user() {
     json_object_set_string(root_object, "password", password);
     
     return json_serialize_to_string(root_value);
+}
+
+//returns a serialized JSON string containing
+//info about the book read from stdin
+char *get_book() {
+    //fetch title
+    char title[BUFFLEN] = {0};
+    printf("title=");
+    fgets(title, BUFFLEN, stdin);
+    if (check_format(title, 1) == -1) {
+        return NULL;
+    }
+    title[strlen(title) - 1] = '\0';
+
+    //fetch author
+    char author[BUFFLEN] = {0};
+    printf("author=");
+    fgets(author, BUFFLEN, stdin);
+    if (check_format(author, 1) == -1) {
+        return NULL;
+    }
+    author[strlen(author) - 1] = '\0';
+
+    //fetch genre
+    char genre[BUFFLEN] = {0};
+    printf("genre=");
+    fgets(genre, BUFFLEN, stdin);
+    if (check_format(genre, 1) == -1) {
+        return NULL;
+    }
+    genre[strlen(genre) - 1] = '\0';
+
+    //fetch publisher
+    char publisher[BUFFLEN] = {0};
+    printf("publisher=");
+    fgets(publisher, BUFFLEN, stdin);
+    if (check_format(publisher, 1) == -1) {
+        return NULL;
+    }
+    publisher[strlen(publisher) - 1] = '\0';
+
+    //fetch page_count
+    char page_count[BUFFLEN] = {0};
+    printf("page_count=");
+    fgets(page_count, BUFFLEN, stdin);
+    page_count[strlen(page_count) - 1] = '\0';
+    if (is_number(page_count) == -1) {
+        printf("Page count must be a number!\n\n");
+        return NULL;
+    }
+
+    //init the JSON object
+    JSON_Value *root_value = json_value_init_object();
+    JSON_Object *root_object = json_value_get_object(root_value);
+    json_object_set_string(root_object, "title", title);
+    json_object_set_string(root_object, "author", author);
+    json_object_set_string(root_object, "genre", genre);
+    json_object_set_string(root_object, "publisher", publisher);
+    json_object_set_string(root_object, "page_count", page_count);
+
+    return json_serialize_to_string(root_value);
+}
+
+//returns URL with book_id appended
+char *get_book_id() {
+    //fetch book_id
+    char id[BUFFLEN] = {0};
+    printf("id=");
+    fgets(id, BUFFLEN, stdin);
+    id[strlen(id) - 1] = '\0';
+    if (is_number(id) == -1) {
+        printf("Book id must be a number!\n\n");
+        return NULL;
+    }
+
+    char url[BUFFLEN] = {0};
+    strcpy(url, URL_GET_BOOK);
+    strcat(url, id);
+
+    return strdup(url);
 }
 
 int main(int argc, char *argv[]) {
@@ -87,13 +196,21 @@ int main(int argc, char *argv[]) {
             }
 
             //compute POST request, send it to server and receive response
-            char *message = compute_post_request(host_ipaddr, URL_REGISTER, PAYLOAD_TYPE, serialized_string, NULL, 0);
+            char *message = compute_post_request(host_ipaddr, URL_REGISTER, PAYLOAD_TYPE, serialized_string, NULL, NULL);
             send_to_server(sockfd, message);
             char *response = receive_from_server(sockfd);
 
             //check if registration was succesful
             if (strstr(response, "HTTP/1.1 400 Bad Request") != NULL && strstr(response, "{\"error\":\"The username ") != NULL) {
-                printf("Registration failed! Username is taken!\n");
+                //extract error message from response
+                char *error_msg = strstr(response, "The username ");
+                
+                //remove the rest of the response
+                int i = 0;
+                while (error_msg[i] != '\"' && error_msg[i] != '\0')
+                    i++;
+                error_msg[i] = '\0';
+                printf("%s\n", error_msg);
             }
             else if (strstr(response, "HTTP/1.1 201 Created") != NULL){
                 printf("Registration succesful!\n");
@@ -118,13 +235,22 @@ int main(int argc, char *argv[]) {
             }
 
             //compute POST request, send it to server and receive response
-            char *message = compute_post_request(host_ipaddr, URL_LOGIN, PAYLOAD_TYPE, serialized_string, NULL, 0);
+            char *message = compute_post_request(host_ipaddr, URL_LOGIN, PAYLOAD_TYPE, serialized_string, NULL, NULL);
             send_to_server(sockfd, message);
             char *response = receive_from_server(sockfd);
 
             //username not found or wrong password
             if (strstr(response, "HTTP/1.1 400 Bad Request") != NULL) {
-                printf("Login failed! Wrong credentials!\n");
+                //extract error message from response
+                char *error_msg = strstr(response, "{\"error\":\"");
+                error_msg += strlen("{\"error\":\"");
+                
+                //remove the rest of the response
+                int i = 0;
+                while (error_msg[i] != '\"' && error_msg[i] != '\0')
+                    i++;
+                error_msg[i] = '\0';
+                printf("Login failed! %s\n", error_msg);
             }
             else if (strstr(response, "Set-Cookie: ") != NULL) {
                 
@@ -225,6 +351,81 @@ int main(int argc, char *argv[]) {
                     printf("%s\n", books);
                 }
                 else printf("No books in library!\n");
+            }
+            else printf("ERROR\n");
+        }
+
+        else if (strcmp(buff, "get_book\n") == 0) //GET_BOOK command
+        {
+            //check if user has access to library
+            if (library_access == 0) {
+                printf("You don't have access to library!\n\n");
+                close_connection(sockfd);
+                continue;
+            }
+
+            //get URL for GET_BOOK request with book id
+            char *url = get_book_id();
+            if (url == NULL) {
+                close_connection(sockfd);
+                continue;
+            }
+
+            //compute GET request, send it to server and receive response
+            char *message = compute_get_request(host_ipaddr, url, NULL, session_cookie, jwt_token);
+            send_to_server(sockfd, message);
+            char *response = receive_from_server(sockfd);
+
+            if (strstr(response, "HTTP/1.1 200 OK") != NULL) {
+                char *book = strstr(response, "{\"id\":");
+
+                if (book != NULL) {
+                    // JSON_Value *root_value;
+                    // JSON_Object *book_object;
+                    // root_value = json_parse_string(book);
+                    // book_object = json_value_get_object(root_value);
+
+                    // printf("title: %s\n", json_object_get_string(book_object, "title"));
+                    // printf("author: %s\n", json_object_get_string(book_object, "author"));
+                    // printf("publisher: %s\n", json_object_get_string(book_object, "publisher"));
+                    // printf("genre: %s\n", json_object_get_string(book_object, "genre"));
+                    // printf("page_count: %d\n", (int)json_object_get_number(book_object, "page_count"));
+                    // printf("\n");
+                    
+                    printf("%s\n", book);
+                }
+                else printf("No book was found with this id!\n");
+            }
+            else if (strstr(response, "HTTP/1.1 404 Not Found") != NULL)
+                printf("No book was found with this id!\n");
+            else 
+                printf("ERROR\n");
+        }
+
+        else if (strcmp(buff, "add_book\n") == 0) //ADD_BOOK command
+        {
+            //check if user has access to library
+            if (library_access == 0) {
+                printf("You don't have access to library!\n\n");
+                close_connection(sockfd);
+                continue;
+            }
+
+            //get JSON object with book info
+            char *serialized_string = get_book();
+            if (serialized_string == NULL) {
+                close_connection(sockfd);
+                continue;
+            }
+
+            //compute POST request, send it to server and receive response
+            char *message = compute_post_request(host_ipaddr, URL_ADD_BOOK, PAYLOAD_TYPE, serialized_string, session_cookie, jwt_token);
+            send_to_server(sockfd, message);
+            char *response = receive_from_server(sockfd);
+
+            //printf("%s\n", response);
+            if (strstr(response, "HTTP/1.1 200 OK") != NULL) {
+                printf("Book added succesfully!\n");
             }
             else printf("ERROR\n");
         }

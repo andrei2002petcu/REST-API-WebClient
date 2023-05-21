@@ -8,6 +8,6 @@ char *compute_get_request(char *host, char *url, char *query_params,
 
 // computes and returns a POST request string (cookies can be NULL if not needed)
 char *compute_post_request(char *host, char *url, char* content_type, char *body_data,
-							char** cookies, int cookies_count);
+							char* cookie, char *token_cookie);
 
 #endif
